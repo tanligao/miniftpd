@@ -1,4 +1,5 @@
 #include "common.h"
+#include "session.h"
 #include "sysutil.h"
 
 
@@ -11,6 +12,7 @@ int main(int argc,char *argv[])
 	}	
 	int listenfd = tcp_server(NULL,8888);
 
+	session_t sess = {-1,"","","",-1,-1};
 	pid_t pid;
 	for( ; ; )
 	{
@@ -25,6 +27,8 @@ int main(int argc,char *argv[])
 			case 0:
 				// 子进程关闭listenfd，避免出现“惊群效应”
 				close(listenfd);
+				sess.ctrl_fd = connfd;
+				begin_session(&sess);
 				break;
 			case -1:
 				ERR_EXIT("fork");

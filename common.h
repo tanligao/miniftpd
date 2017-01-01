@@ -15,10 +15,15 @@
 #include <fcntl.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <pwd.h>
 
 #define ERR_EXIT(err_str) do { perror(err_str);  \
 		exit(EXIT_FAILURE); } while(0)
 
-#define LISTENQ 1024
+#define LISTENQ 	 1024
+
+#define MAX_COMMAND_LINE 1024
+#define MAX_COMMAND 	 32
+#define MAX_ARG		 1024
 
 #endif /* __COMMON_H_ */
