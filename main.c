@@ -73,7 +73,7 @@ int main(int argc,char *argv[])
 	else
 		printf("tunable_listen_addrss: %s\n", tunable_listen_adress);
 
-	int listenfd = tcp_server(NULL,8888);
+	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
 	session_t sess = {-1,"","","",-1,-1};
 	pid_t pid;
