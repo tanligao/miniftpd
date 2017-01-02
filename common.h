@@ -27,4 +27,9 @@
 #define MAX_COMMAND 	 32
 #define MAX_ARG		 1024
 
+#define MAX_LINE 		 1024
+#define MAX_SET_NAME_LEN	 128
+#define MAX_SET_VALUE_LEN	 128
+
+
 #endif /* __COMMON_H_ */

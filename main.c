@@ -2,6 +2,9 @@
 #include "session.h"
 #include "sysutil.h"
 #include "str.h"
+#include "parseconf.h"
+#include "tunable.h"
+
 
 int main(int argc,char *argv[])
 {
@@ -10,6 +13,7 @@ int main(int argc,char *argv[])
 		printf("run miniftpd must be root\n");
 		exit(EXIT_FAILURE);
 	}
+	// test for str.h
 	/* test	str_all_space
 	char *str1 = "            a         e";
 	char *str2 = "                    ";
@@ -48,6 +52,23 @@ int main(int argc,char *argv[])
 	printf("%d\n", result);
 	*/
 
+	// test for parseconf
+	/*
+	parseconf_load_file("miniftpd.conf");
+	printf("%d\n", tunable_pasv_enable);
+	printf("%d\n", tunable_port_enable);
+	printf("%d\n", tunable_listen_port);
+	printf("%d\n", tunable_max_clients);
+	printf("%d\n", tunable_max_per_ip);
+	printf("%d\n", tunable_accept_timeout);
+	printf("%d\n", tunable_connect_timeout);
+	printf("%d\n", tunable_idle_session_timeout);
+	printf("%d\n", tunable_data_connection_timeout);
+	printf("%o\n", tunable_local_umask);
+	printf("%d\n", tunable_upload_max_rate);
+	printf("%d\n", tunable_download_max_rate);		
+	*/
+	
 	int listenfd = tcp_server(NULL,8888);
 	
 	session_t sess = {-1,"","","",-1,-1};
