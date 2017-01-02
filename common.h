@@ -16,6 +16,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <pwd.h>
+#include <ctype.h>
 
 #define ERR_EXIT(err_str) do { perror(err_str);  \
 		exit(EXIT_FAILURE); } while(0)
