@@ -74,6 +74,8 @@ int main(int argc,char *argv[])
 		printf("tunable_listen_addrss: %s\n", tunable_listen_adress);
 	*/
 
+	parseconf_load_file(MINIFTPD_CONF);
+
 	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
 	session_t sess = {-1,-1,"","","",-1,-1};
