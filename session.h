@@ -5,6 +5,7 @@
 
 typedef struct session
 {
+	int uid;
 	// 控制连接
 	int ctrl_fd;
 	char cmdline[MAX_COMMAND_LINE];

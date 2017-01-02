@@ -2,11 +2,15 @@
 #include "common.h"
 #include "sysutil.h"
 #include "str.h"
+#include "ftpcodes.h"
+
+static void do_user(session_t *sess);
+static void do_pass(session_t *sess);
+void ftp_relply(session_t *sess,int status,const char *text);
 
 void handle_child(session_t *sess)
 {
-	char *welcome_str = "220 (miniftpd 0.1)\r\n";
-	writen(sess->ctrl_fd,welcome_str,strlen(welcome_str));
+	ftp_relply(sess,FTP_GREET,"(miniftpd 0.1)");
 	while(1)
 	{
 		memset(sess->cmdline,0,MAX_COMMAND_LINE);
@@ -24,5 +28,71 @@ void handle_child(session_t *sess)
 		printf("%s %s\n",sess->cmd,sess->cmd_arg);
 		// 将命令全部转化为大写
 		str_upper(sess->cmd);
+
+		if( strcmp("USER",sess->cmd) == 0 )
+		{
+			do_user(sess);
+		}
+		else if( strcmp("PASS",sess->cmd) == 0 )
+		{
+			do_pass(sess);
+		}
 	}
+}
+
+static void do_user(session_t *sess)
+{
+	struct passwd *pw = getpwnam(sess->cmd_arg);
+	if( pw == NULL )
+	{
+		// user is not exist
+		ftp_relply(sess,FTP_LOGINERR,"Login incorrect.");
+		return;
+	}
+	sess->uid = pw->pw_uid;
+	ftp_relply(sess,FTP_GIVEPWORD,"Please specify the password.");
+}
+
+static void do_pass(session_t *sess)
+{
+	struct passwd *pw = getpwuid(sess->uid);
+	if( pw == NULL )
+	{
+		ftp_relply(sess,FTP_LOGINERR,"Login incorrect.");
+		return;
+	}
+	// only root can do this
+	struct spwd *sp = getspnam(pw->pw_name);
+	if( sp == NULL )
+	{
+		ftp_relply(sess,FTP_LOGINERR,"Login incorrect.");
+		return;	
+	}
+
+	// encrypt the sess passwd
+	char *encrypt_pass = crypt(sess->cmd_arg, sp->sp_pwdp);
+	if( strcmp(encrypt_pass,sp->sp_pwdp) != 0 )
+	{
+		ftp_relply(sess,FTP_LOGINERR,"Password incorrect.");	
+		return;	
+	}
+	// login successful,set process egid and euid
+	if( setegid(pw->pw_gid) < 0 )
+	{
+		ERR_EXIT("setegid");
+	}
+
+	if( seteuid(pw->pw_uid) < 0 )
+	{
+		ERR_EXIT("seteuid");
+	}
+	chdir(pw->pw_dir);
+	ftp_relply(sess,FTP_LOGINOK,"Login successful.");
+}
+
+void ftp_relply(session_t *sess,int status,const char *text)
+{
+	char buf[MAX_LINE] = {0};
+	sprintf(buf,"%d %s\r\n",status,text);
+	writen(sess->ctrl_fd,buf,strlen(buf));
 }

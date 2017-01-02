@@ -53,7 +53,7 @@ int main(int argc,char *argv[])
 	*/
 
 	// test for parseconf
-
+	/*
 	parseconf_load_file(MINIFTPD_CONF);
 	printf("tunable_pasv_enable: %d\n", tunable_pasv_enable);
 	printf("tunable_port_enable: %d\n", tunable_port_enable);
@@ -72,10 +72,11 @@ int main(int argc,char *argv[])
 		printf("tunable_listen_addrss = NULL\n");
 	else
 		printf("tunable_listen_addrss: %s\n", tunable_listen_adress);
+	*/
 
 	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
-	session_t sess = {-1,"","","",-1,-1};
+	session_t sess = {-1,-1,"","","",-1,-1};
 	pid_t pid;
 	for( ; ; )
 	{

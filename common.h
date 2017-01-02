@@ -17,6 +17,8 @@
 #include <arpa/inet.h>
 #include <pwd.h>
 #include <ctype.h>
+#include <shadow.h>
+#include <crypt.h>
 
 #define ERR_EXIT(err_str) do { perror(err_str);  \
 		exit(EXIT_FAILURE); } while(0)
