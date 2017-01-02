@@ -4,10 +4,8 @@
 void str_trim_crlf(char *str)
 {
 	char *p = str + (strlen(str) - 1);
-	if( *p == '\r' || *p == '\n' )
-	{
-		*p = '\0';
-	}
+	while (*p == '\r' || *p == '\n')
+		*p-- = '\0';
 }
 
 void str_split(const char *str,char *left,char *right,char c)

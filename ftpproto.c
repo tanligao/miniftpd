@@ -11,13 +11,18 @@ void ftp_relply(session_t *sess,int status,const char *text);
 void handle_child(session_t *sess)
 {
 	ftp_relply(sess,FTP_GREET,"(miniftpd 0.1)");
+	int ret;
 	while(1)
 	{
 		memset(sess->cmdline,0,MAX_COMMAND_LINE);
 		memset(sess->cmd,0,MAX_COMMAND);
 		memset(sess->cmd_arg,0,MAX_ARG);
-		readline(sess->ctrl_fd,sess->cmdline,MAX_COMMAND_LINE);
+		ret = readline(sess->ctrl_fd,sess->cmdline,MAX_COMMAND_LINE);
 
+		if( ret == -1 )
+			ERR_EXIT("readline");
+		else if( ret == 0 )
+			exit(EXIT_SUCCESS);
 		// 解析读取到的FTP命令与参数，处理FTP命令，然后发送给父进程
 		printf("%s", sess->cmdline);
 		str_trim_crlf(sess->cmdline);
