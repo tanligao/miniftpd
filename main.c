@@ -54,7 +54,7 @@ int main(int argc,char *argv[])
 
 	// test for parseconf
 
-	parseconf_load_file("miniftpd.conf");
+	parseconf_load_file(MINIFTPD_CONF);
 	printf("tunable_pasv_enable: %d\n", tunable_pasv_enable);
 	printf("tunable_port_enable: %d\n", tunable_port_enable);
 	printf("tunable_listen_port: %d\n", tunable_listen_port);

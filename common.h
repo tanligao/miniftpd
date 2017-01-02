@@ -31,5 +31,5 @@
 #define MAX_SET_NAME_LEN	 128
 #define MAX_SET_VALUE_LEN	 128
 
-
+#define MINIFTPD_CONF	"miniftpd.conf"
 #endif /* __COMMON_H_ */
