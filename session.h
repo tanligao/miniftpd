@@ -14,7 +14,8 @@ typedef struct session
 	// 进程通信fd
 	int parent_fd;
 	int child_fd;
-
+	// ftpproto state
+	int is_ascii;
 } session_t;
 
 void begin_session(session_t *sess);

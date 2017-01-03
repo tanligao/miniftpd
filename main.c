@@ -78,7 +78,7 @@ int main(int argc,char *argv[])
 
 	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
-	session_t sess = {-1,-1,"","","",-1,-1};
+	session_t sess = {-1,-1,"","","",-1,-1,0};
 	pid_t pid;
 	for( ; ; )
 	{
