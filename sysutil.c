@@ -183,7 +183,6 @@ int connect_timeout(int fd, struct sockaddr_in *addr, unsigned int wait_seconds)
 	ret = connect(fd, (struct sockaddr*)addr, addrlen);
 	if (ret < 0 && errno == EINPROGRESS)
 	{
-		//printf("AAAAA\n");
 		fd_set connect_fdset;
 		struct timeval timeout;
 		FD_ZERO(&connect_fdset);
@@ -204,7 +203,6 @@ int connect_timeout(int fd, struct sockaddr_in *addr, unsigned int wait_seconds)
 			return -1;
 		else if (ret == 1)
 		{
-			//printf("BBBBB\n");
 			/* ret返回为1，可能有两种情况，一种是连接建立成功，一种是套接字产生错误，*/
 			/* 此时错误信息不会保存至errno变量中，因此，需要调用getsockopt来获取。 */
 			int err;
@@ -216,12 +214,10 @@ int connect_timeout(int fd, struct sockaddr_in *addr, unsigned int wait_seconds)
 			}
 			if (err == 0)
 			{
-				//printf("DDDDDDD\n");
 				ret = 0;
 			}
 			else
 			{
-				//printf("CCCCCC\n");
 				errno = err;
 				ret = -1;
 			}
@@ -486,7 +482,33 @@ int tcp_server(const char *host,unsigned short port)
 	return sockfd;
 }
 
+int tcp_client(unsigned int port)
+{
+	int sockfd;
+	if( ( sockfd = socket(AF_INET,SOCK_STREAM,0 )) < 0 )
+	{
+		ERR_EXIT("socket");
+	}
+	if( port > 0 )
+	{
+		int opt = 1;
+		setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&opt,sizeof(opt));
 
+		char local_ip[16] = {0};
+		getlocalip(local_ip);
+
+		struct sockaddr_in sa_in;
+		bzero(&sa_in,sizeof(sa_in));
+		sa_in.sin_family = AF_INET;
+		sa_in.sin_port = port;
+		sa_in.sin_addr.s_addr = inet_addr(local_ip);
+		if( bind(sockfd,(struct sockaddr*)&sa_in,sizeof(sa_in)) < 0 )
+		{
+			ERR_EXIT("bind");
+		}
+	}
+	return sockfd;
+}
 
 
 

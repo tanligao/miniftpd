@@ -14,8 +14,11 @@ int main(int argc,char *argv[])
 		exit(EXIT_FAILURE);
 	}
 	// test for list
+	/*
 	list_common();
 	exit(EXIT_SUCCESS);
+	*/
+
 	// test for str.h
 	/* test	str_all_space
 	char *str1 = "            a         e";
@@ -81,7 +84,7 @@ int main(int argc,char *argv[])
 
 	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
-	session_t sess = {-1,-1,"","","",-1,-1,0};
+	session_t sess = {-1,-1,"","","",-1,-1,0,NULL,-1};
 	pid_t pid;
 	for( ; ; )
 	{

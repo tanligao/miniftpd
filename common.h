@@ -40,4 +40,6 @@
 #define MINIFTPD_CONF	"miniftpd.conf"
 
 #define HALF_YEAR_SEC	182*24*3600
+
+#define DATA_PORT		20
 #endif /* __COMMON_H_ */

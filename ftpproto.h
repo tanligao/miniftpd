@@ -10,6 +10,6 @@ typedef struct ftpcmd
 } ftpcmd_t ;
 
 void handle_child(session_t *sess);
-int list_common(void);
+int list_common(session_t *sess);
 
 #endif /*__FTPPROTO_H__ */

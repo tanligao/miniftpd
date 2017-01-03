@@ -24,5 +24,7 @@ void send_fd(int sock_fd, int fd);
 int recv_fd(const int sock_fd);
 
 int tcp_server(const char *host,unsigned short port);
+int tcp_client(unsigned int port);
+
 
 #endif /* __SYSUTIL_H_ */

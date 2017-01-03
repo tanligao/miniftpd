@@ -3,6 +3,7 @@
 #include "sysutil.h"
 #include "str.h"
 #include "ftpcodes.h"
+#include "tunable.h"
 
 // 访问控制命令
 static void do_user(session_t *sess);
@@ -92,6 +93,10 @@ static ftpcmd_t ctrl_cmds_map[] =
 
 void ftp_relply(session_t *sess,int status,const char *text);
 void ftp_lrelply(session_t *sess,int status,const char *text);
+int    get_transfer_fd(session_t *sess);
+int    port_active(session_t *sess);
+int    pasv_active(session_t *sess);
+
 
 void handle_child(session_t *sess)
 {
@@ -210,7 +215,25 @@ void do_quit(session_t *sess)
 
 void do_port(session_t *sess)
 {
+	// recv cmd_arg:127,0,0,0,111,111
+	// last two 111 is port
+	unsigned int v[6];
+	sscanf(sess->cmd_arg,"%u,%u,%u,%u,%u,%u",&v[2],&v[3],&v[4],&v[6],&v[0],&v[1]);
+	sess->port_addr = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
+	memset(sess->port_addr,0,sizeof(struct sockaddr_in));
 
+	sess->port_addr->sin_family = AF_INET;
+	unsigned char *p = (unsigned char*)&sess->port_addr->sin_port;
+	p[0] = v[0];
+	p[1] = v[1];
+
+	p = (unsigned char*)&sess->port_addr->sin_addr;
+	p[0] = v[2];
+	p[1] = v[3];
+	p[2] = v[4];
+	p[3] = v[5];
+
+	ftp_relply(sess,FTP_PORTOK,"PORT command successful,Consider using PASV.");
 }
 
 void do_pasv(session_t *sess)
@@ -264,7 +287,18 @@ void do_appe(session_t *sess)
 
 void do_list(session_t *sess)
 {
+	// create data socket link
+	if( get_transfer_fd(sess) == 0 )
+	{
+		return;
+	}
+	ftp_relply(sess,FTP_DATACONN,"Here comes the directory list.");
 
+	list_common(sess);
+
+	close(sess->data_fd);
+	
+	ftp_relply(sess,FTP_TRANSFEROK,"Directory send OK.");
 }
 
 void do_nlst(session_t *sess)
@@ -375,7 +409,7 @@ void ftp_lrelply(session_t *sess,int status,const char *text)
 	writen(sess->ctrl_fd,buf,strlen(buf));
 }
 
-int list_common(void)
+int list_common(session_t *sess)
 {
 	DIR *dir = opendir(".");
 	if( dir == NULL )
@@ -504,10 +538,50 @@ int list_common(void)
 		{
 			sprintf(buf + off,"%s\r\n",dt->d_name);
 		}
-		printf("%s", buf);
+		writen(sess->data_fd,buf,strlen(buf));
 	}
 
 	closedir(dir);
 
 	return 1;
+}
+
+int    get_transfer_fd(session_t *sess)
+{
+	// 检测是否收到port或者pasv命令	
+	if( !port_active(sess) && !pasv_active(sess) )
+	{
+		return 0;
+	}
+	// port model
+	if( port_active(sess) )
+	{
+		//tcp_client(DATA_PORT);
+		int data_fd = tcp_client(0);
+		if( connect_timeout(data_fd,sess->port_addr,tunable_connect_timeout) < 0 )
+		{
+			close(data_fd);
+			return 0;
+		}
+		sess->data_fd = data_fd;
+	}
+	if( sess->port_addr )
+	{
+		free(sess->port_addr);
+		sess->port_addr = NULL;
+	}
+
+	return 1;
+}
+
+int    port_active(session_t *sess)
+{
+	if( sess->port_addr )
+		return 1;
+	return 0;
+}
+
+int    pasv_active(session_t *sess)
+{
+	return 0;
 }

@@ -16,6 +16,10 @@ typedef struct session
 	int child_fd;
 	// ftpproto state
 	int is_ascii;
+	// port_addr
+	struct sockaddr_in *port_addr;
+	// data fd
+	int data_fd;
 } session_t;
 
 void begin_session(session_t *sess);
