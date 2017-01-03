@@ -19,6 +19,10 @@
 #include <ctype.h>
 #include <shadow.h>
 #include <crypt.h>
+#include <sys/time.h>
+#include <time.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #define ERR_EXIT(err_str) do { perror(err_str);  \
 		exit(EXIT_FAILURE); } while(0)
@@ -34,4 +38,6 @@
 #define MAX_SET_VALUE_LEN	 128
 
 #define MINIFTPD_CONF	"miniftpd.conf"
+
+#define HALF_YEAR_SEC	182*24*3600
 #endif /* __COMMON_H_ */

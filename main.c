@@ -13,6 +13,9 @@ int main(int argc,char *argv[])
 		printf("run miniftpd must be root\n");
 		exit(EXIT_FAILURE);
 	}
+	// test for list
+	list_common();
+	exit(EXIT_SUCCESS);
 	// test for str.h
 	/* test	str_all_space
 	char *str1 = "            a         e";
