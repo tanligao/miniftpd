@@ -215,10 +215,16 @@ void do_quit(session_t *sess)
 
 void do_port(session_t *sess)
 {
+	/*
 	// recv cmd_arg:127,0,0,0,111,111
 	// last two 111 is port
 	unsigned int v[6];
-	sscanf(sess->cmd_arg,"%u,%u,%u,%u,%u,%u",&v[2],&v[3],&v[4],&v[6],&v[0],&v[1]);
+	sscanf(sess->cmd_arg,"%u,%u,%u,%u,%u,%u",&v[2],&v[3],&v[4],&v[5],&v[0],&v[1]);
+	printf("sess->cmd_arg: %s\n",sess->cmd_arg);
+	int i;
+	for( i = 0; i < 6; ++i )
+		printf("%d ",v[i]);
+	printf("\n");
 	sess->port_addr = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
 	memset(sess->port_addr,0,sizeof(struct sockaddr_in));
 
@@ -234,6 +240,25 @@ void do_port(session_t *sess)
 	p[3] = v[5];
 
 	ftp_relply(sess,FTP_PORTOK,"PORT command successful,Consider using PASV.");
+	*/
+
+	unsigned int v[6];
+
+	sscanf(sess->cmd_arg, "%u,%u,%u,%u,%u,%u", &v[2], &v[3], &v[4], &v[5], &v[0], &v[1]);
+	sess->port_addr = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+	memset(sess->port_addr, 0, sizeof(struct sockaddr_in));
+	sess->port_addr->sin_family = AF_INET;
+	unsigned char *p = (unsigned char *)&sess->port_addr->sin_port;
+	p[0] = v[0];
+	p[1] = v[1];
+
+	p = (unsigned char *)&sess->port_addr->sin_addr;
+	p[0] = v[2];
+	p[1] = v[3];
+	p[2] = v[4];
+	p[3] = v[5];
+
+	ftp_relply(sess, FTP_PORTOK, "PORT command successful. Consider using PORT.");
 }
 
 void do_pasv(session_t *sess)
@@ -290,6 +315,7 @@ void do_list(session_t *sess)
 	// create data socket link
 	if( get_transfer_fd(sess) == 0 )
 	{
+		printf("ccccccccc\n");
 		return;
 	}
 	ftp_relply(sess,FTP_DATACONN,"Here comes the directory list.");
@@ -297,7 +323,7 @@ void do_list(session_t *sess)
 	list_common(sess);
 
 	close(sess->data_fd);
-	
+
 	ftp_relply(sess,FTP_TRANSFEROK,"Directory send OK.");
 }
 
@@ -308,7 +334,7 @@ void do_nlst(session_t *sess)
 
 void do_rest(session_t *sess)
 {
-
+	ftp_relply(sess,FTP_RESTOK,"Restart position accepted (0)");
 }
 
 void do_abor(session_t *sess)
@@ -433,99 +459,99 @@ int list_common(session_t *sess)
 		perms[0] = '?';
 		switch( mode &  S_IFMT )
 		{
-		case S_IFREG:
-			perms[0] = '-';
-			break;
-		case S_IFDIR:
-			perms[0] = 'd';			
-			break;
-		case S_IFBLK:
-			perms[0] = 'b';
-			break;
-		case S_IFLNK:
-			perms[0] = 'l';
-			break;
-		case S_IFCHR:
-			perms[0] = 'c';
-			break;
-		case S_IFSOCK:
-			perms[0] = 's';
-			break;
-		case S_IFIFO:
-			perms[0] = 'p';
-			break;
-		default:
-			break;
+			case S_IFREG:
+				perms[0] = '-';
+				break;
+			case S_IFDIR:
+				perms[0] = 'd';			
+				break;
+			case S_IFBLK:
+				perms[0] = 'b';
+				break;
+			case S_IFLNK:
+				perms[0] = 'l';
+				break;
+			case S_IFCHR:
+				perms[0] = 'c';
+				break;
+			case S_IFSOCK:
+				perms[0] = 's';
+				break;
+			case S_IFIFO:
+				perms[0] = 'p';
+				break;
+			default:
+				break;
 		}
 
-           		if( mode & S_IRUSR )
-           		{
-           			perms[1] = 'r';
-           		}
-           		if( mode & S_IWUSR )
-           		{
-           			perms[2] = 'w';
-           		}
-           		if( mode & S_IXUSR )
-           		{
-           			perms[3] = 'x';
-           		}
-           		if( mode & S_IRGRP )
-           		{
-           			perms[4] = 'r';
-           		}
-           		if( mode & S_IWGRP )
-           		{
-           			perms[5] = 'w';
-           		}
-           		if( mode & S_IXGRP )
-           		{
-           			perms[6] = 'x';
-           		}
-           		if( mode & S_IROTH )
-           		{
-           			perms[7] = 'r';
-           		}
-           		if( mode & S_IWOTH )
-           		{
-           			perms[8] = 'w';
-           		}
-           		if( mode & S_IXOTH )
-           		{
-           			perms[9] = 'x';
-           		}
-           		// special perms
-           		if( mode & S_ISUID )
-           		{
-           			perms[3] = (perms[3] == 'x' ? 's' : 'S');
-           		}
-           		if( mode & S_ISGID )
-           		{
-           			perms[6] = (perms[6] == 'x' ? 's' : 'S');
-           		}
-           		if( mode & S_ISVTX )
-           		{
-           			perms[9] = (perms[9] == 'x' ? 's' : 'S');
-           		}
+		if( mode & S_IRUSR )
+		{
+			perms[1] = 'r';
+		}
+		if( mode & S_IWUSR )
+		{
+			perms[2] = 'w';
+		}
+		if( mode & S_IXUSR )
+		{
+			perms[3] = 'x';
+		}
+		if( mode & S_IRGRP )
+		{
+			perms[4] = 'r';
+		}
+		if( mode & S_IWGRP )
+		{
+			perms[5] = 'w';
+		}
+		if( mode & S_IXGRP )
+		{
+			perms[6] = 'x';
+		}
+		if( mode & S_IROTH )
+		{
+			perms[7] = 'r';
+		}
+		if( mode & S_IWOTH )
+		{
+			perms[8] = 'w';
+		}
+		if( mode & S_IXOTH )
+		{
+			perms[9] = 'x';
+		}
+		// special perms
+		if( mode & S_ISUID )
+		{
+			perms[3] = (perms[3] == 'x' ? 's' : 'S');
+		}
+		if( mode & S_ISGID )
+		{
+			perms[6] = (perms[6] == 'x' ? 's' : 'S');
+		}
+		if( mode & S_ISVTX )
+		{
+			perms[9] = (perms[9] == 'x' ? 's' : 'S');
+		}
 
-           		char buf[MAX_LINE] = {0};
-           		int off = 0;
-           		off += sprintf(buf,"%s ",perms);
-           		off += sprintf(buf + off,"%3d %-8d  %-8d",(unsigned int)sbuf.st_nlink,(unsigned int)sbuf.st_uid,(unsigned int)sbuf.st_gid);
-           		off += sprintf(buf + off, "%8lu ",(unsigned long)sbuf.st_size);
+		char buf[MAX_LINE] = {0};
+		int off = 0;
+		off += sprintf(buf,"%s ",perms);
+		off += sprintf(buf + off,"%3d %-8d  %-8d",(unsigned int)sbuf.st_nlink,(unsigned int)sbuf.st_uid,(unsigned int)sbuf.st_gid);
+		off += sprintf(buf + off, "%8lu ",(unsigned long)sbuf.st_size);
 
-           		const char *p_data_format = "%b %e %H:%M";
-           		struct timeval tv;
-           		gettimeofday(&tv,NULL);
-           		time_t local_time = tv.tv_sec;
-           		if( sbuf.st_mtime > local_time || (local_time - sbuf.st_mtime) > HALF_YEAR_SEC)
-           		{
-           			p_data_format = "%b %e    %Y";
-           		}
-           		char databuf[64] = {0};
-           		struct tm* p_tm = localtime(&local_time);
-           		strftime(databuf,sizeof(databuf),p_data_format,p_tm);
-		
+		const char *p_data_format = "%b %e %H:%M";
+		struct timeval tv;
+		gettimeofday(&tv,NULL);
+		time_t local_time = tv.tv_sec;
+		if( sbuf.st_mtime > local_time || (local_time - sbuf.st_mtime) > HALF_YEAR_SEC)
+		{
+			p_data_format = "%b %e    %Y";
+		}
+		char databuf[64] = {0};
+		struct tm* p_tm = localtime(&local_time);
+		strftime(databuf,sizeof(databuf),p_data_format,p_tm);
+
 		off += sprintf(buf + off,"%s ",databuf);
 		// link file
 		if( S_ISLNK(sbuf.st_mode) )
@@ -551,20 +577,25 @@ int    get_transfer_fd(session_t *sess)
 	// 检测是否收到port或者pasv命令	
 	if( !port_active(sess) && !pasv_active(sess) )
 	{
+		printf("aaaaaaa\n");
 		return 0;
 	}
 	// port model
 	if( port_active(sess) )
 	{
 		//tcp_client(DATA_PORT);
-		int data_fd = tcp_client(0);
+		int data_fd = tcp_client(8889);
+		printf("data_fd: %d\n", data_fd);
+		printf("tunable_connect_timeout: %d\n",tunable_connect_timeout);
 		if( connect_timeout(data_fd,sess->port_addr,tunable_connect_timeout) < 0 )
 		{
+			printf("bbbbbbbbb\n");
 			close(data_fd);
 			return 0;
 		}
 		sess->data_fd = data_fd;
 	}
+
 	if( sess->port_addr )
 	{
 		free(sess->port_addr);
