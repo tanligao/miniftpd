@@ -20,6 +20,7 @@ typedef struct session
 	struct sockaddr_in *port_addr;
 	// data fd
 	int data_fd;
+	int pasv_listen_fd;
 } session_t;
 
 void begin_session(session_t *sess);

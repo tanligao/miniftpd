@@ -4,6 +4,7 @@
 #include "str.h"
 #include "ftpcodes.h"
 #include "tunable.h"
+#include "privsock.h"
 
 // 访问控制命令
 static void do_user(session_t *sess);
@@ -96,7 +97,8 @@ void ftp_lrelply(session_t *sess,int status,const char *text);
 int    get_transfer_fd(session_t *sess);
 int    port_active(session_t *sess);
 int    pasv_active(session_t *sess);
-
+void get_file_mode(char str[10],mode_t mode);
+int    get_port_fd(session_t *sess);
 
 void handle_child(session_t *sess)
 {
@@ -215,33 +217,6 @@ void do_quit(session_t *sess)
 
 void do_port(session_t *sess)
 {
-	/*
-	// recv cmd_arg:127,0,0,0,111,111
-	// last two 111 is port
-	unsigned int v[6];
-	sscanf(sess->cmd_arg,"%u,%u,%u,%u,%u,%u",&v[2],&v[3],&v[4],&v[5],&v[0],&v[1]);
-	printf("sess->cmd_arg: %s\n",sess->cmd_arg);
-	int i;
-	for( i = 0; i < 6; ++i )
-		printf("%d ",v[i]);
-	printf("\n");
-	sess->port_addr = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
-	memset(sess->port_addr,0,sizeof(struct sockaddr_in));
-
-	sess->port_addr->sin_family = AF_INET;
-	unsigned char *p = (unsigned char*)&sess->port_addr->sin_port;
-	p[0] = v[0];
-	p[1] = v[1];
-
-	p = (unsigned char*)&sess->port_addr->sin_addr;
-	p[0] = v[2];
-	p[1] = v[3];
-	p[2] = v[4];
-	p[3] = v[5];
-
-	ftp_relply(sess,FTP_PORTOK,"PORT command successful,Consider using PASV.");
-	*/
-
 	unsigned int v[6];
 
 	sscanf(sess->cmd_arg, "%u,%u,%u,%u,%u,%u", &v[2], &v[3], &v[4], &v[5], &v[0], &v[1]);
@@ -258,11 +233,28 @@ void do_port(session_t *sess)
 	p[2] = v[4];
 	p[3] = v[5];
 
-	ftp_relply(sess, FTP_PORTOK, "PORT command successful. Consider using PORT.");
+	ftp_relply(sess, FTP_PORTOK, "PORT command successful. Consider using PASV.");
 }
 
 void do_pasv(session_t *sess)
 {
+	char local_ip[16] = {0};
+	getlocalip(local_ip);
+	sess->pasv_listen_fd = tcp_server(local_ip,0);
+	struct sockaddr_in sa_in;
+	socklen_t sa_in_len = sizeof(sa_in);
+	if( getsockname(sess->pasv_listen_fd,(struct sockaddr*)&sa_in,&sa_in_len) < 0 )
+	{
+		ERR_EXIT("getsockname");
+	}
+
+	unsigned short port = ntohs(sa_in.sin_port);
+	unsigned int v[4];
+	sscanf(local_ip,"%u.%u.%u.%u",&v[0],&v[1],&v[2],&v[3]);
+	char text[MAX_LINE] = {0};
+	sprintf(text,"Entering Passive Mode (%u,%u,%u,%u,%u,%u).",v[0],v[1],v[2],v[3],(port >> 8),(port & 0xFF));
+
+	ftp_relply(sess,FTP_PASVOK,text);
 
 }
 
@@ -315,7 +307,6 @@ void do_list(session_t *sess)
 	// create data socket link
 	if( get_transfer_fd(sess) == 0 )
 	{
-		printf("ccccccccc\n");
 		return;
 	}
 	ftp_relply(sess,FTP_DATACONN,"Here comes the directory list.");
@@ -454,34 +445,156 @@ int list_common(session_t *sess)
 		{
 			continue;
 		}
-		char perms[ ] = "----------";
-		mode_t mode = sbuf.st_mode;
-		perms[0] = '?';
-		switch( mode &  S_IFMT )
+		char perms[] = "----------";
+		get_file_mode(perms,sbuf.st_mode);
+		
+		char buf[MAX_LINE] = {0};
+		int off = 0;
+		off += sprintf(buf,"%s ",perms);
+		off += sprintf(buf + off,"%3d %-8d  %-8d",(unsigned int)sbuf.st_nlink,(unsigned int)sbuf.st_uid,(unsigned int)sbuf.st_gid);
+		off += sprintf(buf + off, "%8lu ",(unsigned long)sbuf.st_size);
+
+		const char *p_data_format = "%b %e %H:%M";
+		struct timeval tv;
+		gettimeofday(&tv,NULL);
+		time_t local_time = tv.tv_sec;
+		if( sbuf.st_mtime > local_time || (local_time - sbuf.st_mtime) > HALF_YEAR_SEC)
 		{
-			case S_IFREG:
-				perms[0] = '-';
-				break;
-			case S_IFDIR:
-				perms[0] = 'd';			
-				break;
-			case S_IFBLK:
-				perms[0] = 'b';
-				break;
-			case S_IFLNK:
-				perms[0] = 'l';
-				break;
-			case S_IFCHR:
-				perms[0] = 'c';
-				break;
-			case S_IFSOCK:
-				perms[0] = 's';
-				break;
-			case S_IFIFO:
-				perms[0] = 'p';
-				break;
-			default:
-				break;
+			p_data_format = "%b %e    %Y";
+		}
+		char databuf[64] = {0};
+		struct tm* p_tm = localtime(&local_time);
+		strftime(databuf,sizeof(databuf),p_data_format,p_tm);
+
+		off += sprintf(buf + off,"%s ",databuf);
+		// link file
+		if( S_ISLNK(sbuf.st_mode) )
+		{
+			char tmp[MAX_LINE] = {0};
+			readlink(dt->d_name,tmp,sizeof(tmp));
+			sprintf(buf + off,"%s -> %s\r\n",dt->d_name,tmp);
+		}
+		else
+		{
+			sprintf(buf + off,"%s\r\n",dt->d_name);
+		}
+		writen(sess->data_fd,buf,strlen(buf));
+	}
+
+	closedir(dir);
+
+	return 1;
+}
+
+int    get_transfer_fd(session_t *sess)
+{
+	// 检测是否收到port或者pasv命令	
+	if( !port_active(sess) && !pasv_active(sess) )
+	{
+		ftp_relply(sess,FTP_BADSENDCONN,"Use PORT or PASV first.");
+		return 0;
+	}
+	int ret = 1;
+	// port model
+	if( port_active(sess) )
+	{
+		//tcp_client(DATA_PORT);
+		/*
+		int data_fd = tcp_client(0);
+		printf("data_fd: %d\n", data_fd);
+		printf("tunable_connect_timeout: %d\n",tunable_connect_timeout);
+		if( connect_timeout(data_fd,sess->port_addr,tunable_connect_timeout) < 0 )
+		{
+			printf("bbbbbbbbb\n");
+			close(data_fd);
+			return 0;
+		}
+		sess->data_fd = data_fd;
+		*/
+		// send to nobody
+		if( get_port_fd(sess) == 0 )
+		{
+			printf("get port fd ret: %d\n", ret);
+			ret = 0;
+		}
+		 
+	}
+
+	if( pasv_active(sess) )
+	{
+		int connfd = accept_timeout(sess->pasv_listen_fd,NULL,tunable_accept_timeout);
+		close(sess->pasv_listen_fd);
+		if(  connfd < 0 )
+		{
+			ret = 0;
+		}
+
+		sess->data_fd = connfd;
+	}
+	if( sess->port_addr )
+	{
+		free(sess->port_addr);
+		sess->port_addr = NULL;
+	}
+	return ret;
+}
+
+int    port_active(session_t *sess)
+{
+	if( sess->port_addr )
+	{
+		if( pasv_active(sess))
+		{
+			fprintf(stderr, "both port and pasv are active");
+			exit(EXIT_FAILURE);
+		}
+		return 1;
+	}
+	return 0;
+}
+
+int    pasv_active(session_t *sess)
+{
+	if( sess->pasv_listen_fd != -1 )
+	{
+		if( port_active(sess) )
+		{
+			fprintf(stderr, "both port and pasv are active");
+			exit(EXIT_FAILURE);
+		}
+		return 1;
+	}
+	return 0;
+}
+
+void get_file_mode(char perms[10],mode_t mode)
+{
+	perms[0] = '?';
+	switch( mode &  S_IFMT )
+	{
+		case S_IFREG:
+			perms[0] = '-';
+			break;
+		case S_IFDIR:
+			perms[0] = 'd';			
+			break;
+		case S_IFBLK:
+			perms[0] = 'b';
+			break;
+		case S_IFLNK:
+			perms[0] = 'l';
+			break;
+		case S_IFCHR:
+			perms[0] = 'c';
+			break;
+		case S_IFSOCK:
+			perms[0] = 's';
+			break;
+		case S_IFIFO:
+			perms[0] = 'p';
+			break;
+		default:
+			break;
 		}
 
 		if( mode & S_IRUSR )
@@ -533,86 +646,27 @@ int list_common(session_t *sess)
 		{
 			perms[9] = (perms[9] == 'x' ? 's' : 'S');
 		}
-
-		char buf[MAX_LINE] = {0};
-		int off = 0;
-		off += sprintf(buf,"%s ",perms);
-		off += sprintf(buf + off,"%3d %-8d  %-8d",(unsigned int)sbuf.st_nlink,(unsigned int)sbuf.st_uid,(unsigned int)sbuf.st_gid);
-		off += sprintf(buf + off, "%8lu ",(unsigned long)sbuf.st_size);
-
-		const char *p_data_format = "%b %e %H:%M";
-		struct timeval tv;
-		gettimeofday(&tv,NULL);
-		time_t local_time = tv.tv_sec;
-		if( sbuf.st_mtime > local_time || (local_time - sbuf.st_mtime) > HALF_YEAR_SEC)
-		{
-			p_data_format = "%b %e    %Y";
-		}
-		char databuf[64] = {0};
-		struct tm* p_tm = localtime(&local_time);
-		strftime(databuf,sizeof(databuf),p_data_format,p_tm);
-
-		off += sprintf(buf + off,"%s ",databuf);
-		// link file
-		if( S_ISLNK(sbuf.st_mode) )
-		{
-			char tmp[MAX_LINE] = {0};
-			readlink(dt->d_name,tmp,sizeof(tmp));
-			sprintf(buf + off,"%s -> %s\r\n",dt->d_name,tmp);
-		}
-		else
-		{
-			sprintf(buf + off,"%s\r\n",dt->d_name);
-		}
-		writen(sess->data_fd,buf,strlen(buf));
-	}
-
-	closedir(dir);
-
-	return 1;
 }
 
-int    get_transfer_fd(session_t *sess)
+int get_port_fd(session_t *sess)
 {
-	// 检测是否收到port或者pasv命令	
-	if( !port_active(sess) && !pasv_active(sess) )
+	priv_sock_send_cmd(sess->child_fd,PRIV_SOCK_GET_DATA_SOCK);
+	unsigned short port = ntohs(sess->port_addr->sin_port);
+	char *conn_ip = inet_ntoa(sess->port_addr->sin_addr);
+	priv_sock_send_int(sess->child_fd,(int)port);
+	priv_sock_send_buf(sess->child_fd,conn_ip,strlen(conn_ip));
+
+	// would block
+	char result = priv_sock_get_result(sess->child_fd);
+	if( result == PRIV_SOCK_RESULT_BAD )
 	{
-		printf("aaaaaaa\n");
 		return 0;
 	}
-	// port model
-	if( port_active(sess) )
+	else if( result == PRIV_SOCK_RESULT_OK )
 	{
-		//tcp_client(DATA_PORT);
-		int data_fd = tcp_client(8889);
-		printf("data_fd: %d\n", data_fd);
-		printf("tunable_connect_timeout: %d\n",tunable_connect_timeout);
-		if( connect_timeout(data_fd,sess->port_addr,tunable_connect_timeout) < 0 )
-		{
-			printf("bbbbbbbbb\n");
-			close(data_fd);
-			return 0;
-		}
-		sess->data_fd = data_fd;
-	}
-
-	if( sess->port_addr )
-	{
-		free(sess->port_addr);
-		sess->port_addr = NULL;
-	}
-
-	return 1;
-}
-
-int    port_active(session_t *sess)
-{
-	if( sess->port_addr )
+		// save data fd
+		sess->data_fd = priv_sock_recv_fd(sess->child_fd);
 		return 1;
-	return 0;
-}
-
-int    pasv_active(session_t *sess)
-{
+	}
 	return 0;
 }

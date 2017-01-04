@@ -24,6 +24,12 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/select.h>
+#include <wchar.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <signal.h>
+#include <linux/capability.h>
+#include <sys/syscall.h>
 
 #define ERR_EXIT(err_str) do { perror(err_str);  \
 		exit(EXIT_FAILURE); } while(0)
@@ -43,4 +49,5 @@
 #define HALF_YEAR_SEC	182*24*3600
 
 #define DATA_PORT		20
+
 #endif /* __COMMON_H_ */

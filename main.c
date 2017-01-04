@@ -82,9 +82,11 @@ int main(int argc,char *argv[])
 
 	parseconf_load_file(MINIFTPD_CONF);
 
+	signal(SIGCHLD,SIG_IGN);
+	
 	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
-	session_t sess = {-1,-1,"","","",-1,-1,0,NULL,-1};
+	session_t sess = {-1,-1,"","","",-1,-1,0,NULL,-1,-1};
 	pid_t pid;
 	for( ; ; )
 	{

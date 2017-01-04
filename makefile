@@ -2,7 +2,7 @@ CC=gcc
 CFLAGS=-Wall -g
 LIBS=-lcrypt
 PROJ=miniftpd
-OBJ=main.o session.o sysutil.o ftpproto.o privparent.o str.o tunable.o parseconf.o
+OBJ=main.o session.o sysutil.o ftpproto.o privparent.o str.o tunable.o parseconf.o privsock.o
 $(PROJ):$(OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 %.o:%.c
