@@ -5,6 +5,7 @@
 #include "parseconf.h"
 #include "tunable.h"
 
+extern session_t *p_sess;
 
 int main(int argc,char *argv[])
 {
@@ -87,7 +88,9 @@ int main(int argc,char *argv[])
 	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
 	session_t sess = {-1,-1,"","","",-1,-1,0,NULL,-1,
-		-1,0,NULL,0,0,0,0};
+		-1,0,0,NULL,0,0,0,0};
+	
+	p_sess = &sess;
 	
 	sess.bw_upload_rate_max = tunable_upload_max_rate;
 	sess.bw_download_rate_max = tunable_download_max_rate;

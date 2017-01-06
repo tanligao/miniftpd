@@ -105,6 +105,11 @@ int   lock_internal(int fd,int lock_type);
 int   unlock_file(int fd);
 
 void limit_rate(session_t *sess,int bytes_transfered,int is_upload);
+void start_cmdio_alarm();
+void start_data_alarm();
+void handle_alarm_timeout(int sig);
+void handle_siglarm(int sig);
+
 
 void handle_child(session_t *sess)
 {
@@ -115,6 +120,9 @@ void handle_child(session_t *sess)
 		memset(sess->cmdline,0,MAX_COMMAND_LINE);
 		memset(sess->cmd,0,MAX_COMMAND);
 		memset(sess->cmd_arg,0,MAX_ARG);
+
+		start_cmdio_alarm();
+
 		ret = readline(sess->ctrl_fd,sess->cmdline,MAX_COMMAND_LINE);
 
 		if( ret == -1 )
@@ -236,7 +244,8 @@ void do_cdup(session_t *sess)
 
 void do_quit(session_t *sess)
 {
-
+	ftp_relply(sess,FTP_GOODBYE,"Goodbye.");
+	exit(EXIT_SUCCESS);
 }
 
 void do_port(session_t *sess)
@@ -464,6 +473,9 @@ void do_retr(session_t *sess)
 	{
 		ftp_relply(sess,FTP_BADSENDNET,"Failure writting to network stream.");
 	}
+
+	// restart ctrl link alarm
+	start_cmdio_alarm();
 }
 
 void do_stor(session_t *sess)
@@ -519,9 +531,10 @@ void do_rest(session_t *sess)
 	ftp_relply(sess,FTP_RESTOK,text);
 }
 
+// 紧急模式数据接收
 void do_abor(session_t *sess)
 {
-
+	
 }
 
 void do_pwd(session_t *sess)
@@ -669,9 +682,10 @@ void do_stat(session_t *sess)
 
 }
 
+// no operation
 void do_noop(session_t *sess)
 {
-
+	ftp_relply(sess,FTP_NOOPOK,"NOOP ok.");
 }
 
 void do_help(session_t *sess)
@@ -752,16 +766,18 @@ int list_common(session_t *sess,int detail)
 
 void limit_rate(session_t *sess,int bytes_transfered,int is_upload)
 {
+	sess->data_process = 1;
+
 	long cur_sec = get_time_sec();
 	long cur_usec = get_time_usec();
 
 	double elapsed;
-	elapsed = cur_sec - sess->bw_transfer_start_sec;
+	elapsed = (double)cur_sec - sess->bw_transfer_start_sec;
 	elapsed += (double)(cur_usec - sess->bw_transfer_start_usec) / (double)1000000;
 
-	if( elapsed <= 0 )
+	if( elapsed <= (double)0 )
 	{
-		elapsed = 0.01;
+		elapsed = (double)0.01;
 	}
 
 	// cal cur transfer v
@@ -773,6 +789,8 @@ void limit_rate(session_t *sess,int bytes_transfered,int is_upload)
 		if( bw_rate < sess->bw_upload_rate_max )
 		{
 			// needn't limit rate
+			sess->bw_transfer_start_sec = cur_sec;
+			sess->bw_transfer_start_usec = cur_usec;
 			return;
 		}
 		rate_ratio = bw_rate / sess->bw_upload_rate_max;
@@ -782,6 +800,8 @@ void limit_rate(session_t *sess,int bytes_transfered,int is_upload)
 	 	if( bw_rate < sess->bw_download_rate_max )
 	 	{
 	 		// needn't limit rate
+	 		sess->bw_transfer_start_sec = cur_sec;
+			sess->bw_transfer_start_usec = cur_usec;
 	 		return;
 	 	}
 	 	rate_ratio = bw_rate / sess->bw_download_rate_max;
@@ -807,7 +827,7 @@ void    upload_common(session_t *sess,int is_append)
 	long long offset = sess->restart_pos;
 	sess->restart_pos = 0;
 
-	int fd = open(sess->cmd_arg,O_CREAT | O_WRONLY);
+	int fd = open(sess->cmd_arg,O_CREAT | O_WRONLY,0666);
 	if( fd == -1 )
 	{
 		ftp_relply(sess,FTP_UPLOADFAIL,"Create file failed1.");
@@ -872,7 +892,7 @@ void    upload_common(session_t *sess,int is_append)
 
 	ftp_relply(sess,FTP_DATACONN,text);
 
-	// down file
+	// 下载文件
 	int flag = 0;
 	
 	char buf[MAX_LINE];
@@ -955,6 +975,9 @@ void    upload_common(session_t *sess,int is_append)
 	{
 		ftp_relply(sess,FTP_BADSENDNET,"Failure reading from network stream.");
 	}
+
+	// restart ctrl link alarm
+	start_cmdio_alarm();
 }
 
 int    get_transfer_fd(session_t *sess)
@@ -1005,6 +1028,13 @@ int    get_transfer_fd(session_t *sess)
 		free(sess->port_addr);
 		sess->port_addr = NULL;
 	}
+
+	// start data link alarm
+	if( ret )
+	{
+		start_data_alarm();
+	}
+
 	return ret;
 }
 
@@ -1131,4 +1161,49 @@ int   unlock_file(int fd)
 	ret = fcntl(fd,F_SETLK,&the_lock);
 
 	return ret;
+}
+
+void start_cmdio_alarm()
+{
+	if( tunable_idle_session_timeout > 0 )
+	{
+		signal(SIGALRM, handle_alarm_timeout);
+		alarm(tunable_idle_session_timeout);
+	}
+}
+
+session_t *p_sess;
+
+void handle_alarm_timeout(int sig)
+{
+	shutdown(p_sess->ctrl_fd,SHUT_RD);
+	ftp_relply(p_sess,FTP_IDLE_TIMEOUT,"Timeout.");
+	shutdown(p_sess->ctrl_fd,SHUT_WR);
+	exit(EXIT_FAILURE);
+}
+
+void start_data_alarm()
+{
+	if( tunable_data_connection_timeout > 0 )
+	{
+		signal(SIGALRM,handle_siglarm);
+		alarm(tunable_data_connection_timeout);
+	}
+	else if( tunable_idle_session_timeout > 0 )
+	{
+		// close pre ctrl alarm
+		alarm(0);
+	}
+}
+
+void handle_siglarm(int sig)
+{
+	if( p_sess->data_process == 0 )
+	{
+		ftp_relply(p_sess,FTP_DATA_TIMEOUT,"Data timeout. Reconnect. Sorry.");
+		exit(EXIT_FAILURE);
+	}
+
+	p_sess->data_process = 0;
+	start_data_alarm();
 }

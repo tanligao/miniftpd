@@ -21,6 +21,7 @@ typedef struct session
 	// 数据传输fd
 	int data_fd;
 	int pasv_listen_fd;
+	int data_process;
 
 	// 断点续传偏移量
 	long long restart_pos;
