@@ -57,7 +57,7 @@ void handle_parent(session_t *sess)
 	{
 		// 读取来自子进程的数据
 		cmd = priv_sock_get_cmd(sess->parent_fd);
-		printf("cmd: %d\n", (int)cmd);
+		//printf("cmd: %d\n", (int)cmd);
 		// 解析内部命令
 		switch(cmd)
 		{
@@ -70,7 +70,7 @@ void handle_parent(session_t *sess)
 			case PRIV_SOCK_PASV_LISTEN:
 				privop_pasv_listen(sess);
 				break;
-			case PRI_SOCK_PASV_ACCEPT:
+			case PRIV_SOCK_PASV_ACCEPT:
 				privop_pasv_accept(sess);
 				break;
 		}
@@ -82,16 +82,17 @@ void privop_pasv_get_data_sock(session_t *sess)
 {
 	// recv short,then ip
 	unsigned short port = (unsigned short)priv_sock_get_int(sess->parent_fd);
+	
 	char ip[16] = {0};
 	priv_sock_recv_buf(sess->parent_fd,ip,sizeof(ip));
 
 	struct sockaddr_in addr;
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family = AF_INET;
-	addr.sin_port = port;
+	addr.sin_port = htons(port);
 	addr.sin_addr.s_addr = inet_addr(ip);
 	
-	printf("address ip: %s\n", ip);
+	//printf("address ip: %s\n", ip);
 
 	int data_fd = tcp_client(20);
 	if( data_fd == -1 )
@@ -110,19 +111,54 @@ void privop_pasv_get_data_sock(session_t *sess)
 	}
 	priv_sock_send_result(sess->parent_fd,PRIV_SOCK_RESULT_OK);
 	priv_sock_send_fd(sess->parent_fd,data_fd);
+	close(data_fd);
 }
 
 void privop_pasv_active(session_t *sess)
 {
-
+	int active;
+	if( sess->pasv_listen_fd != -1 )
+	{
+		active = 1;
+	}
+	else
+	{
+		active = 0;
+	}
+	priv_sock_send_int(sess->parent_fd,active);
 }
 
 void privop_pasv_listen(session_t *sess)
 {
+	char local_ip[16] = {0};
+	getlocalip(local_ip);
 
+	sess->pasv_listen_fd = tcp_server(local_ip,0);
+	struct sockaddr_in sa_in;
+	socklen_t sa_in_len = sizeof(sa_in);
+	if( getsockname(sess->pasv_listen_fd,(struct sockaddr*)&sa_in,&sa_in_len) < 0 )
+	{
+		ERR_EXIT("getsockname");
+	}
+
+	unsigned short port = ntohs(sa_in.sin_port);
+
+	priv_sock_send_int(sess->parent_fd,(int)port);
 }
 
 void privop_pasv_accept(session_t *sess)
 {
-
+	int fd = accept_timeout(sess->pasv_listen_fd,NULL,tunable_accept_timeout);
+	close(sess->pasv_listen_fd);
+	sess->pasv_listen_fd = -1;
+	if( fd == -1 )
+	{
+		priv_sock_send_result(sess->parent_fd,PRIV_SOCK_RESULT_BAD);
+	}
+	else
+	{
+		priv_sock_send_result(sess->parent_fd,PRIV_SOCK_RESULT_OK);
+		priv_sock_send_fd(sess->parent_fd,fd);
+		close(fd);
+	}
 }

@@ -14,13 +14,26 @@ typedef struct session
 	// 进程通信fd
 	int parent_fd;
 	int child_fd;
-	// ftpproto state
+	// 传输模式
 	int is_ascii;
-	// port_addr
+	// PORT地址
 	struct sockaddr_in *port_addr;
-	// data fd
+	// 数据传输fd
 	int data_fd;
 	int pasv_listen_fd;
+
+	// 断点续传偏移量
+	long long restart_pos;
+
+	// 重命名name
+	char *rnfr_name;
+
+	// 限速相关
+	unsigned int bw_upload_rate_max;
+	unsigned int bw_download_rate_max;
+	long bw_transfer_start_sec;
+	long bw_transfer_start_usec;
+
 } session_t;
 
 void begin_session(session_t *sess);

@@ -3,14 +3,28 @@
 /*需要修改 /etc/hosts-- 要不就换一种编程方式*/
 int getlocalip(char *ip)
 {
+	/*
 	char host[100] = {0};
 	if (gethostname(host, sizeof(host)) < 0)
 		return -1;
 	struct hostent *hp;
 	if ((hp = gethostbyname(host)) == NULL)
-	return -1;
+		return -1;
 
 	strcpy(ip, inet_ntoa(*(struct in_addr*)hp->h_addr));
+		return 0;
+	*/
+
+	// get eth1 net interface ip address
+	int inet_sock;
+	struct ifreq ifr;
+
+	inet_sock = socket(AF_INET,SOCK_DGRAM,0);
+	strcpy(ifr.ifr_name,"eth1");
+	if( ioctl(inet_sock,SIOCGIFADDR,&ifr) < 0 )
+		return -1;
+
+	strcpy( ip,inet_ntoa( ( (struct sockaddr_in *)&ifr.ifr_addr)->sin_addr) );
 	return 0;
 }
 
@@ -183,7 +197,7 @@ int connect_timeout(int fd, struct sockaddr_in *addr, unsigned int wait_seconds)
 	ret = connect(fd, (struct sockaddr*)addr, addrlen);
 	if (ret < 0 && errno == EINPROGRESS)
 	{
-		printf("AAAAAA\n");
+		//printf("AAAAAA\n");
 		fd_set connect_fdset;
 		struct timeval timeout;
 		FD_ZERO(&connect_fdset);
@@ -197,7 +211,7 @@ int connect_timeout(int fd, struct sockaddr_in *addr, unsigned int wait_seconds)
 		} while (ret < 0 && errno == EINTR);
 		if (ret == 0)
 		{
-			printf("EEEEEEEE\n");
+			//printf("EEEEEEEE\n");
 			ret = -1;
 			errno = ETIMEDOUT;
 		}
@@ -205,7 +219,7 @@ int connect_timeout(int fd, struct sockaddr_in *addr, unsigned int wait_seconds)
 			return -1;
 		else if (ret == 1)
 		{
-			printf("BBBBBBB\n");
+			//printf("BBBBBBB\n");
 			/* ret返回为1，可能有两种情况，一种是连接建立成功，一种是套接字产生错误，*/
 			/* 此时错误信息不会保存至errno变量中，因此，需要调用getsockopt来获取。 */
 			int err;
@@ -217,12 +231,12 @@ int connect_timeout(int fd, struct sockaddr_in *addr, unsigned int wait_seconds)
 			}
 			if (err == 0)
 			{
-				printf("DDDDDDDDD\n");
+				//printf("DDDDDDDDD\n");
 				ret = 0;
 			}
 			else
 			{
-				printf("CCCCCCCCCCC\n");
+				//printf("CCCCCCCCCCC\n");
 				errno = err;
 				ret = -1;
 			}
@@ -515,5 +529,133 @@ int tcp_client(unsigned int port)
 	return sockfd;
 }
 
+void get_file_mode(char perms[10],mode_t mode)
+{
+	perms[0] = '?';
+	switch( mode &  S_IFMT )
+	{
+		case S_IFREG:
+			perms[0] = '-';
+			break;
+		case S_IFDIR:
+			perms[0] = 'd';			
+			break;
+		case S_IFBLK:
+			perms[0] = 'b';
+			break;
+		case S_IFLNK:
+			perms[0] = 'l';
+			break;
+		case S_IFCHR:
+			perms[0] = 'c';
+			break;
+		case S_IFSOCK:
+			perms[0] = 's';
+			break;
+		case S_IFIFO:
+			perms[0] = 'p';
+			break;
+		default:
+			break;
+		}
 
+		if( mode & S_IRUSR )
+		{
+			perms[1] = 'r';
+		}
+		if( mode & S_IWUSR )
+		{
+			perms[2] = 'w';
+		}
+		if( mode & S_IXUSR )
+		{
+			perms[3] = 'x';
+		}
+		if( mode & S_IRGRP )
+		{
+			perms[4] = 'r';
+		}
+		if( mode & S_IWGRP )
+		{
+			perms[5] = 'w';
+		}
+		if( mode & S_IXGRP )
+		{
+			perms[6] = 'x';
+		}
+		if( mode & S_IROTH )
+		{
+			perms[7] = 'r';
+		}
+		if( mode & S_IWOTH )
+		{
+			perms[8] = 'w';
+		}
+		if( mode & S_IXOTH )
+		{
+			perms[9] = 'x';
+		}
+		// special perms
+		if( mode & S_ISUID )
+		{
+			perms[3] = (perms[3] == 'x' ? 's' : 'S');
+		}
+		if( mode & S_ISGID )
+		{
+			perms[6] = (perms[6] == 'x' ? 's' : 'S');
+		}
+		if( mode & S_ISVTX )
+		{
+			perms[9] = (perms[9] == 'x' ? 's' : 'S');
+		}
+}
 
+const char* get_stat_databuf(struct stat *sbuf)
+{
+	static char databuf[64] = {0};
+	const char *p_data_format = "%b %e %H:%M";
+	struct timeval tv;
+	gettimeofday(&tv,NULL);
+	time_t local_time = tv.tv_sec;
+	if( sbuf->st_mtime > local_time || (local_time - sbuf->st_mtime) > HALF_YEAR_SEC)
+	{
+		p_data_format = "%b %e    %Y";
+	}
+
+	struct tm* p_tm = localtime(&local_time);
+	strftime(databuf,sizeof(databuf),p_data_format,p_tm);
+
+	return databuf;
+}
+
+static struct timeval s_curr_time;
+
+long  get_time_sec()
+{
+	if( gettimeofday(&s_curr_time,NULL) < 0 )
+	{
+		ERR_EXIT("gettimeofday");
+	}
+	return s_curr_time.tv_sec;
+}
+
+long  get_time_usec()
+{
+	return s_curr_time.tv_usec;
+}
+
+void nano_sleep(double seconds)
+{
+	time_t secs = (time_t)seconds;
+	double fractional = seconds - (double)secs;
+
+	struct timespec ts;
+	ts.tv_sec = secs;
+	ts.tv_nsec = (long)(fractional * (double)1000000000);
+
+	int ret;
+	do
+	{
+		ret = nanosleep(&ts,&ts);
+	} while(ret == -1 && errno == EINTR );
+}

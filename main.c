@@ -86,7 +86,12 @@ int main(int argc,char *argv[])
 	
 	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
-	session_t sess = {-1,-1,"","","",-1,-1,0,NULL,-1,-1};
+	session_t sess = {-1,-1,"","","",-1,-1,0,NULL,-1,
+		-1,0,NULL,0,0,0,0};
+	
+	sess.bw_upload_rate_max = tunable_upload_max_rate;
+	sess.bw_download_rate_max = tunable_download_max_rate;
+
 	pid_t pid;
 	for( ; ; )
 	{

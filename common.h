@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <linux/capability.h>
 #include <sys/syscall.h>
+#include <sys/sendfile.h>
 
 #define ERR_EXIT(err_str) do { perror(err_str);  \
 		exit(EXIT_FAILURE); } while(0)
