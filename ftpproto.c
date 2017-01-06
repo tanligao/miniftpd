@@ -426,6 +426,10 @@ void do_retr(session_t *sess)
 	{
 		bytes_to_send -= offset;
 	}
+	
+	sess->bw_transfer_start_sec = get_time_sec();
+	sess->bw_transfer_start_usec = get_time_usec();
+
 	while( bytes_to_send > 0 )
 	{
 		int num_this_time = bytes_to_send > (4*MAX_LINE) ? (4*MAX_LINE) : bytes_to_send;
@@ -434,6 +438,8 @@ void do_retr(session_t *sess)
 		{
 			flag = 2;
 		}
+
+		limit_rate(sess,ret,0);
 		bytes_to_send -= ret;
 	}
 
