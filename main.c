@@ -4,8 +4,21 @@
 #include "str.h"
 #include "parseconf.h"
 #include "tunable.h"
+#include "ftpcodes.h"
+#include "ftpproto.h"
+#include "hash.h"
 
 extern session_t *p_sess;
+static unsigned int s_children;
+
+static hash_t *s_ip_count_hash;
+static hash_t *s_pid_ip_hash;
+
+void check_limits(session_t *sess);
+void handle_sigchld(int sig);
+unsigned int hash_func(unsigned int,void *);
+unsigned int handle_ip_count(unsigned int *ip);
+void drop_ip_count(unsigned int *ip);
 
 int main(int argc,char *argv[])
 {
@@ -83,12 +96,17 @@ int main(int argc,char *argv[])
 
 	parseconf_load_file(MINIFTPD_CONF);
 
-	signal(SIGCHLD,SIG_IGN);
+	daemon(0,0);
+
+	s_children = 0;
+	s_ip_count_hash =  hash_alloc(IP_COUNT_BUCKETS,hash_func);
+	s_pid_ip_hash = hash_alloc(PID_IP_COUNT,hash_func);
+	signal(SIGCHLD,handle_sigchld);
 	
 	int listenfd = tcp_server(tunable_listen_adress,tunable_listen_port);
 	
 	session_t sess = {-1,-1,"","","",-1,-1,0,NULL,-1,
-		-1,0,0,NULL,0,0,0,0};
+		-1,0,0,NULL,0,0,0,0,0,0,0};
 	
 	p_sess = &sess;
 	
@@ -98,10 +116,22 @@ int main(int argc,char *argv[])
 	pid_t pid;
 	for( ; ; )
 	{
+		struct sockaddr_in client_addr;
+		bzero(&client_addr,sizeof(struct sockaddr_in));
+
 		// 时间设置为0,阻塞接收连接
-		int connfd = accept_timeout(listenfd,NULL,0);
+		int connfd = accept_timeout(listenfd,&client_addr,0);
+		
+		unsigned int client_ip = client_addr.sin_addr.s_addr;
+
+		 sess.num_this_ip = handle_ip_count(&client_ip);
+
 		if( connfd == -1 )
 			continue;
+
+		++s_children;
+		sess.num_clients = s_children;
+
 		// 创建子进程
 		pid = fork();
 		switch(pid)
@@ -110,12 +140,16 @@ int main(int argc,char *argv[])
 				// 子进程关闭listenfd，避免出现“惊群效应”
 				close(listenfd);
 				sess.ctrl_fd = connfd;
+				check_limits(&sess);
+				signal(SIGCHLD,SIG_IGN);
 				begin_session(&sess);
 				break;
 			case -1:
+				--s_children;
 				ERR_EXIT("fork");
 				break;
 			default:
+				hash_add_entry(s_pid_ip_hash,&pid,sizeof(pid),&client_ip,sizeof(client_ip));
 				// 父进程关闭connfd
 				close(connfd);
 				break;
@@ -123,4 +157,89 @@ int main(int argc,char *argv[])
 	}
 
 	return EXIT_SUCCESS;
+}
+
+void check_limits(session_t *sess)
+{
+	if( tunable_max_clients > 0 && sess->num_clients > tunable_max_clients )
+	{	
+		ftp_relply(sess,FTP_TOO_MANY_USERS,"There are too many connected users,please try later.");
+
+		exit(EXIT_FAILURE);
+	}
+
+	if( tunable_max_per_ip > 0 && sess->num_this_ip > tunable_max_per_ip )
+	{
+		ftp_relply(sess,FTP_IP_LIMIT,"There are too many connections,from your internet address");
+
+		exit(EXIT_FAILURE);
+	}
+}
+
+void handle_sigchld(int sig)
+{
+	pid_t pid;
+	while( (pid = waitpid(-1,NULL,WNOHANG)) > 0 )
+	{
+		unsigned int *ip = hash_lookup_entry(s_pid_ip_hash,&pid,sizeof(pid));
+		if( ip == NULL )
+			continue;
+
+		drop_ip_count(ip);
+		hash_free_entry(s_pid_ip_hash,&pid,sizeof(pid))	;
+	}	
+
+	--s_children;
+}
+
+unsigned int hash_func(unsigned int buckets,void *key)
+{
+	unsigned int *number = (unsigned int *)key;
+
+	return (*number) % buckets;
+}
+
+unsigned int handle_ip_count(unsigned int *ip)
+{
+	// 当一个客户登录时，先在s_ip_count_hash更新这个表中的对应的
+	// 表项，即该ip对应的连接数+1,如果这个表项不存在，则在表中添加
+	// 一条记录，并且将ip对应的连接数置为1
+	unsigned int count;
+	unsigned int *p_count = (unsigned int *)hash_lookup_entry(s_ip_count_hash,ip,sizeof(unsigned int));
+
+	if( p_count == NULL )
+	{
+		count = 1;
+		hash_add_entry(s_ip_count_hash,ip,sizeof(unsigned int),&count,sizeof(unsigned int));
+	}
+	else
+	{
+		count = *p_count;
+		++count;
+		*p_count = count;
+	}
+	return count;
+}
+
+void drop_ip_count(unsigned int *ip)
+{
+	unsigned int count;
+	unsigned int *p_count = (unsigned int *)hash_lookup_entry(s_ip_count_hash,ip,sizeof(unsigned int));
+
+	if( p_count == NULL )
+	{
+		return;
+	}
+	count = *p_count;
+	if( count <= 0 )
+	{
+		return;
+	}
+	--count;
+	*p_count = count;
+	
+	if( count == 0 )
+	{
+		hash_free_entry(s_ip_count_hash,ip,sizeof(unsigned int));
+	}
 }

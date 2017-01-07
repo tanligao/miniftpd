@@ -13,4 +13,7 @@ void handle_child(session_t *sess);
 int    list_common(session_t *sess,int detail);
 void upload_common(session_t *sess,int is_append);
 
+void ftp_relply(session_t *sess,int status,const char *text);
+void ftp_lrelply(session_t *sess,int status,const char *text);
+
 #endif /*__FTPPROTO_H__ */

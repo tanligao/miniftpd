@@ -31,6 +31,8 @@
 #include <linux/capability.h>
 #include <sys/syscall.h>
 #include <sys/sendfile.h>
+#include <sys/wait.h>
+#include <assert.h>
 
 #define ERR_EXIT(err_str) do { perror(err_str);  \
 		exit(EXIT_FAILURE); } while(0)
@@ -50,5 +52,9 @@
 #define HALF_YEAR_SEC	182*24*3600
 
 #define DATA_PORT		20
+
+#define IP_COUNT_BUCKETS	256
+
+#define PID_IP_COUNT		256
 
 #endif /* __COMMON_H_ */

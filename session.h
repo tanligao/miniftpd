@@ -35,6 +35,12 @@ typedef struct session
 	long bw_transfer_start_sec;
 	long bw_transfer_start_usec;
 
+	int abor_received;
+
+	// 
+	unsigned int num_clients;
+	unsigned int num_this_ip;
+
 } session_t;
 
 void begin_session(session_t *sess);

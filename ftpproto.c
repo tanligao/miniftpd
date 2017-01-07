@@ -6,6 +6,9 @@
 #include "tunable.h"
 #include "privsock.h"
 
+// declare in main.c
+session_t *p_sess;
+
 // 访问控制命令
 static void do_user(session_t *sess);
 static void do_pass(session_t *sess);
@@ -17,8 +20,6 @@ static void do_quit(session_t *sess);
 static void do_port(session_t *sess);
 static void do_pasv(session_t *sess);
 static void do_type(session_t *sess);
-static void do_stru(session_t *sess);
-static void do_mode(session_t *sess);
 
 // 服务命令
 static void do_retr(session_t *sess);
@@ -60,8 +61,8 @@ static ftpcmd_t ctrl_cmds_map[] =
 	{ "PORT",	do_port },
 	{ "PASV",	do_pasv },
 	{ "TYPE",	do_type },
-	{ "STRU",	do_stru },
-	{ "MODE",	do_mode },
+	{ "STRU",	NULL },
+	{ "MODE",	NULL },
 
 	// 服务命令
 	{ "RETR",	do_retr },
@@ -92,8 +93,6 @@ static ftpcmd_t ctrl_cmds_map[] =
 	{ "ALLO",	NULL }
 };
 
-void ftp_relply(session_t *sess,int status,const char *text);
-void ftp_lrelply(session_t *sess,int status,const char *text);
 int    get_transfer_fd(session_t *sess);
 int    port_active(session_t *sess);
 int    pasv_active(session_t *sess);
@@ -110,6 +109,12 @@ void start_data_alarm();
 void handle_alarm_timeout(int sig);
 void handle_siglarm(int sig);
 
+void handle_sigurg(int sig);
+
+void check_abor(session_t *sess);
+
+void do_site_chmod(session_t *sess,char *chmod_arg);
+void do_site_umask(session_t *sess,char *umask_arg);
 
 void handle_child(session_t *sess)
 {
@@ -211,6 +216,9 @@ static void do_pass(session_t *sess)
 		ERR_EXIT("seteuid");
 	}
 	
+	signal(SIGURG,handle_sigurg);
+	activate_sigurg(sess->ctrl_fd);
+
 	umask(tunable_local_umask);
 
 	chdir(pw->pw_dir);
@@ -317,16 +325,6 @@ void do_type(session_t *sess)
 	{
 		ftp_relply(sess,FTP_BADCMD,"Unrecognised command.");
 	}
-}
-
-void do_stru(session_t *sess)
-{
-
-}
-
-void do_mode(session_t *sess)
-{
-
 }
 
 void do_retr(session_t *sess)
@@ -449,6 +447,11 @@ void do_retr(session_t *sess)
 		}
 
 		limit_rate(sess,ret,0);
+		if( sess->abor_received )
+		{
+			flag = 2;
+			break;
+		}
 		bytes_to_send -= ret;
 	}
 
@@ -461,7 +464,7 @@ void do_retr(session_t *sess)
 	sess->data_fd = -1;
 	close(fd);
 
-	if( flag == 0 )
+	if( flag == 0 && !sess->abor_received )
 	{
 		ftp_relply(sess,FTP_TRANSFEROK,"Transfer complete.");
 	}
@@ -473,6 +476,8 @@ void do_retr(session_t *sess)
 	{
 		ftp_relply(sess,FTP_BADSENDNET,"Failure writting to network stream.");
 	}
+
+	check_abor(sess);
 
 	// restart ctrl link alarm
 	start_cmdio_alarm();
@@ -534,7 +539,7 @@ void do_rest(session_t *sess)
 // 紧急模式数据接收
 void do_abor(session_t *sess)
 {
-	
+	ftp_relply(sess,FTP_ABOR_NOCONN,"No transfer to ABOR.");
 }
 
 void do_pwd(session_t *sess)
@@ -634,7 +639,29 @@ void do_rnto(session_t *sess)
 
 void do_site(session_t *sess)
 {
+	// SITE CHMOD <param> <file>
+	// SITE UMASK [umask]
+	// SITE HELP
+	char cmd[100] = {0};
+	char arg[100] = {0};
 
+	str_split(sess->cmd_arg,cmd,arg,' ')   ;
+	if( strcmp(cmd,"CHMOD") == 0 )
+	{
+		do_site_chmod(sess,arg);
+	}
+	else if( strcmp(cmd,"UMASK") == 0 )
+	{
+		do_site_umask(sess,arg);
+	}
+	else if( strcmp(cmd,"HELP") == 0 )
+	{
+		ftp_relply(sess,FTP_SITEHELP,"CHMOD UMASK HELP");
+	}
+	else
+	{
+		ftp_relply(sess,FTP_BADCMD,"Unknown SITE command");
+	}
 }
 
 void do_syst(session_t *sess)
@@ -679,7 +706,39 @@ void do_size(session_t *sess)
 
 void do_stat(session_t *sess)
 {
+	ftp_lrelply(sess,FTP_STATOK,"FTP server stats: ");
 
+	if( sess->bw_upload_rate_max == 0 )
+	{
+		char text[MAX_LINE];
+		sprintf(text,"No session upload bandwidth limit\r\n");
+		writen(sess->ctrl_fd,text,strlen(text));
+	}
+	else if( sess->bw_upload_rate_max > 0 )
+	{
+		char text[MAX_LINE];
+		sprintf(text,"Session upload bandwidth limit int bytes/s is %u\r\n",sess->bw_upload_rate_max);
+		writen(sess->ctrl_fd,text,strlen(text));
+	}
+
+	if( sess->bw_download_rate_max == 0 )
+	{
+		char text[MAX_LINE];
+		sprintf(text,"No session download bandwidth limit\r\n");
+		writen(sess->ctrl_fd,text,strlen(text));
+	}
+	else if( sess->bw_download_rate_max > 0 )
+	{
+		char text[MAX_LINE];
+		sprintf(text,"Session download bandwidth limit in byte/s is %u\r\n",sess->bw_download_rate_max);
+		writen(sess->ctrl_fd,text,strlen(text));
+	}
+
+	char text[MAX_LINE] = {0};
+	sprintf(text,"At session startup,client count was %u\r\n",sess->num_clients);
+	writen(sess->ctrl_fd,text,strlen(text));
+
+	ftp_relply(sess,FTP_STATOK,"End of status.");
 }
 
 // no operation
@@ -690,7 +749,19 @@ void do_noop(session_t *sess)
 
 void do_help(session_t *sess)
 {
+	ftp_lrelply(sess,FTP_HELP,"The following commands are recognized.");
 
+	writen(sess->ctrl_fd, " ABOR ACCT ALLO APPE CDUP CWD  DELE EPRT EPSV FEAT HELP LIST MDTM MKD\r\n",
+        strlen(" ABOR ACCT ALLO APPE CDUP CWD  DELE EPRT EPSV FEAT HELP LIST MDTM MKD\r\n"));
+    	writen(sess->ctrl_fd, " MODE NLST NOOP OPTS PASS PASV PORT PWD  QUIT REIN REST RETR RMD  RNFR\r\n",
+        strlen(" MODE NLST NOOP OPTS PASS PASV PORT PWD  QUIT REIN REST RETR RMD  RNFR\r\n"));
+    	
+    	writen(sess->ctrl_fd, " RNTO SITE SIZE SMNT STAT STOR STOU STRU SYST TYPE USER XCUP XCWD XMKD\r\n",
+        strlen(" RNTO SITE SIZE SMNT STAT STOR STOU STRU SYST TYPE USER XCUP XCWD XMKD\r\n"));
+    	
+    	writen(sess->ctrl_fd, " XPWD XRMD\r\n", strlen(" XPWD XRMD\r\n"));
+    	
+    	ftp_relply(sess, FTP_HELP, "Help OK.");
 }
 
 void ftp_relply(session_t *sess,int status,const char *text)
@@ -923,6 +994,11 @@ void    upload_common(session_t *sess,int is_append)
 		}
 
 		limit_rate(sess,ret,1);
+		if( sess->abor_received )
+		{
+			flag = 2;
+			break;
+		}
 
 		if( writen(fd,buf,ret) != ret )
 		{
@@ -963,7 +1039,7 @@ void    upload_common(session_t *sess,int is_append)
 	sess->data_fd = -1;
 	close(fd);
 
-	if( flag == 0 )
+	if( flag == 0 && !sess->abor_received )
 	{
 		ftp_relply(sess,FTP_TRANSFEROK,"Transfer complete.");
 	}
@@ -975,6 +1051,8 @@ void    upload_common(session_t *sess,int is_append)
 	{
 		ftp_relply(sess,FTP_BADSENDNET,"Failure reading from network stream.");
 	}
+
+	check_abor(sess);
 
 	// restart ctrl link alarm
 	start_cmdio_alarm();
@@ -1172,8 +1250,6 @@ void start_cmdio_alarm()
 	}
 }
 
-session_t *p_sess;
-
 void handle_alarm_timeout(int sig)
 {
 	shutdown(p_sess->ctrl_fd,SHUT_RD);
@@ -1206,4 +1282,91 @@ void handle_siglarm(int sig)
 
 	p_sess->data_process = 0;
 	start_data_alarm();
+}
+
+void handle_sigurg(int sig)
+{
+	if( p_sess->data_fd == -1 )
+	{
+		return;
+	}
+
+	char cmdline[MAX_COMMAND_LINE] = {0};
+	int ret = readline(p_sess->ctrl_fd,cmdline,MAX_COMMAND_LINE);
+	if( ret <= 0 )
+	{
+		ERR_EXIT("readline");
+	}
+	
+	str_trim_crlf(cmdline);
+
+	if( strcmp(cmdline,"ABOR") == 0
+		|| strcmp(cmdline,"\377\364\377\362ABOR") == 0 )
+	{
+		p_sess->abor_received = 1;
+		shutdown(p_sess->data_fd,SHUT_RDWR);
+	}
+	else
+	{
+		ftp_relply(p_sess,FTP_BADCMD,"Unknown command.");
+	}
+}
+
+void check_abor(session_t *sess)
+{
+	if( sess->abor_received )
+	{
+		sess->abor_received = 0;
+		ftp_relply(sess,FTP_ABOROK,"ABOR successful.");
+	}
+}
+
+void do_site_chmod(session_t *sess,char *chmod_arg)
+{
+	// chmod <param> <file>
+	if( strlen(chmod_arg) == 0 )
+	{
+		ftp_relply(sess,FTP_BADCMD,"SITE CHMOD needs 2 arguments.");
+		return;
+	}
+	char perms[100] = {0};
+	char file[100] = {0};
+
+	str_split(chmod_arg,perms,file,' ');
+	if( strlen(file) == 0 )
+	{
+		ftp_relply(sess,FTP_BADCMD,"SITE CHMOD needs 2 arguments.");
+		return;	
+	}
+
+	unsigned int mode = str_octal_to_uint(perms);
+	if( chmod(file,mode) < 0 )
+	{
+		ftp_relply(sess,FTP_BADMODE,"SITE CHMOD failed.");
+	}
+	else
+	{
+		ftp_relply(sess,FTP_CHMODOK,"SITE CHMOD ok.");
+	}
+}
+
+
+void do_site_umask(session_t *sess,char *umask_arg)
+{
+	// umask <param>
+	if( strlen(umask_arg) == 0 )
+	{
+		char text[MAX_LINE] = {0};
+		sprintf(text,"Your current UMASK is 0%o",tunable_local_umask);
+		ftp_relply(sess,FTP_UMASKOK,text);
+	}
+	else
+	{
+		unsigned int umode = str_octal_to_uint(umask_arg);
+		umask(umode);
+		
+		char text[MAX_LINE] = {0};
+		sprintf(text,"UMASK set to 0%o",umode);
+		ftp_relply(sess,FTP_UMASKOK,text);
+	}
 }

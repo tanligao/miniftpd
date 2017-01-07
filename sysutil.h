@@ -34,4 +34,11 @@ long  get_time_usec();
 
 void nano_sleep(double seconds);
 
+// 开启fd接受带外数据的功能
+void activate_oobinline(int fd);
+
+// 当fd上有带外数据的时候，将产生SIGURG信号
+// 该函数设定当前进程接收fd的带外数据
+void activate_sigurg(int fd);
+
 #endif /* __SYSUTIL_H_ */
