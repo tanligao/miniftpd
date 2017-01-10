@@ -1,4 +1,4 @@
-# miniftpd
+# miniftpd-基于多进程模型的FTP服务器实现
   miniftpd基于多进程模型的ftp服务器（参考vsftpd）</br>
 主要实现思路：每个客户两个进程（nobody和service），nobody进程主要为了控制service的</br>
   相关权限（绑定20端口），协助service进程，进程维护自己的session，service进程解析客</br>
